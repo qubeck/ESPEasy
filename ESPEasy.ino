@@ -486,6 +486,12 @@ String eventBuffer = "";
 \*********************************************************************************************/
 void setup()
 {
+  boolean bt1 = digitalRead(12);
+  pinMode(12, INPUT);
+  
+  digitalWrite(14, 1);
+  pinMode(14, OUTPUT);
+
   Serial.begin(115200);
 
   if (SpiffsSectors() == 0)
@@ -535,6 +541,12 @@ void setup()
 
     String log = F("\nINIT : Booting Build nr:");
     log += BUILD;
+
+    if(!bt1)
+      log += (F("\n Good: Button press detected."));
+    else
+      log += (F("\n Error: Button press missed!!!"));
+    
     addLog(LOG_LEVEL_INFO, log);
 
     if (Settings.UseSerial && Settings.SerialLogLevel >= LOG_LEVEL_DEBUG_MORE)
@@ -815,6 +827,9 @@ void checkSensors()
       saveToRTC(1);
       String log = F("Enter deep sleep...");
       addLog(LOG_LEVEL_INFO, log);
+      
+      pinMode(14, INPUT); //experimental
+      
       ESP.deepSleep(Settings.Delay * 1000000, WAKE_RF_DEFAULT); // Sleep for set delay
     }
   }
