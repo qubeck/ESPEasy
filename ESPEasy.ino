@@ -113,7 +113,7 @@
 // Enable FEATURE_ADC_VCC to measure supply voltage using the analog pin
 // Please note that the TOUT pin has to be disconnected in this mode
 // Use the "System Info" device to read the VCC value
-#define FEATURE_ADC_VCC                  false
+#define FEATURE_ADC_VCC                  true
 
 // ********************************************************************************
 //   DO NOT CHANGE ANYTHING BELOW THIS LINE
@@ -480,17 +480,15 @@ unsigned long loopCounterLast = 0;
 unsigned long loopCounterMax = 1;
 
 String eventBuffer = "";
+boolean glExtWakeUpState;
 
 /*********************************************************************************************\
  * SETUP
 \*********************************************************************************************/
 void setup()
 {
-  boolean bt1 = digitalRead(12);
-  pinMode(12, INPUT);
-  
-  digitalWrite(14, 1);
-  pinMode(14, OUTPUT);
+  pinMode(14, INPUT);
+  glExtWakeUpState = !digitalRead(14);
 
   Serial.begin(115200);
 
@@ -542,7 +540,7 @@ void setup()
     String log = F("\nINIT : Booting Build nr:");
     log += BUILD;
 
-    if(!bt1)
+    if(glExtWakeUpState)
       log += (F("\n Good: Button press detected."));
     else
       log += (F("\n Error: Button press missed!!!"));
