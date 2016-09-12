@@ -39,7 +39,7 @@
 //   Analog input (ESP-7/12 only)
 //   Pulse counters
 //   Dallas OneWire DS18b20 temperature sensors
-//   DHT11/22 humidity sensors
+//   DHT11/22/12 humidity sensors
 //   BMP085 I2C Barometric Pressure sensor
 //   PCF8591 4 port Analog to Digital converter (I2C)
 //   RFID Wiegand-26 reader
@@ -121,7 +121,8 @@
 #define ESP_PROJECT_PID           2015050101L
 #define ESP_EASY
 #define VERSION                             9
-#define BUILD                             121
+#define BUILD                             131
+#define BUILD_NOTES                        ""
 #define FEATURE_SPIFFS                  false
 
 #define CPLUGIN_PROTOCOL_ADD                1
@@ -149,7 +150,7 @@
 #define PLUGIN_CONFIGLONGVAR_MAX            4
 #define PLUGIN_EXTRACONFIGVAR_MAX          16
 #define CPLUGIN_MAX                        16
-#define UNIT_MAX                           32
+#define UNIT_MAX                           32 // Only relevant for UDP unicast message 'sweeps' and the nodelist.
 #define RULES_TIMER_MAX                     8
 #define SYSTEM_TIMER_MAX                    8
 #define SYSTEM_CMD_TIMER_MAX                2
@@ -178,6 +179,7 @@
 #define SENSOR_TYPE_TEMP_HUM_BARO           4
 #define SENSOR_TYPE_DUAL                    5
 #define SENSOR_TYPE_TRIPLE                  6
+#define SENSOR_TYPE_QUAD                    7
 #define SENSOR_TYPE_SWITCH                 10
 #define SENSOR_TYPE_DIMMER                 11
 #define SENSOR_TYPE_LONG                   20
@@ -230,7 +232,9 @@ ESP8266HTTPUpdateServer httpUpdater(true);
 #if FEATURE_ADC_VCC
 ADC_MODE(ADC_VCC);
 #endif
+#ifndef LWIP_OPEN_SRC
 #define LWIP_OPEN_SRC
+#endif
 #include "lwip/opt.h"
 #include "lwip/udp.h"
 #include "lwip/igmp.h"
@@ -398,6 +402,7 @@ struct ProtocolStruct
   boolean usesAccount;
   boolean usesPassword;
   int defaultPort;
+  boolean usesTemplate;
 } Protocol[CPLUGIN_MAX];
 
 struct NodeStruct
@@ -478,6 +483,8 @@ unsigned long elapsed = 0;
 unsigned long loopCounter = 0;
 unsigned long loopCounterLast = 0;
 unsigned long loopCounterMax = 1;
+
+unsigned long flashWrites = 0;
 
 String eventBuffer = "";
 
