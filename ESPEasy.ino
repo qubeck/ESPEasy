@@ -115,6 +115,8 @@
 // Use the "System Info" device to read the VCC value
 #define FEATURE_ADC_VCC                  true
 
+#define FEATURE_MB_TS                    true
+
 // ********************************************************************************
 //   DO NOT CHANGE ANYTHING BELOW THIS LINE
 // ********************************************************************************
@@ -489,6 +491,10 @@ void setup()
 {
   pinMode(14, INPUT);
   glExtWakeUpState = !digitalRead(14);
+  if (0) {
+    digitalWrite(14, 0);
+    pinMode(14, OUTPUT);
+  }
 
   Serial.begin(115200);
 
@@ -541,10 +547,8 @@ void setup()
     log += BUILD;
 
     if(glExtWakeUpState)
-      log += (F("\n Good: Button press detected."));
-    else
-      log += (F("\n Error: Button press missed!!!"));
-    
+      log += (F("\n External wake up detected."));
+
     addLog(LOG_LEVEL_INFO, log);
 
     if (Settings.UseSerial && Settings.SerialLogLevel >= LOG_LEVEL_DEBUG_MORE)
