@@ -1,5 +1,5 @@
 /****************************************************************************************************************************\
- * Arduino project "ESP Easy" © Copyright www.esp8266.nu
+ * Arduino project "ESP Easy" © Copyright www.letscontrolit.com
  *
  * This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License
  * as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
@@ -10,9 +10,9 @@
  * IDE download    : https://www.arduino.cc/en/Main/Software
  * ESP8266 Package : https://github.com/esp8266/Arduino
  *
- * Source Code     : https://sourceforge.net/projects/espeasy/
- * Support         : http://www.esp8266.nu
- * Discussion      : http://www.esp8266.nu/forum/
+ * Source Code     : https://github.com/ESP8266nu/ESPEasy
+ * Support         : http://www.letscontrolit.com
+ * Discussion      : http://www.letscontrolit.com/forum/
  *
  * Additional information about licensing can be found at : http://www.gnu.org/licenses
 \*************************************************************************************************************************/
@@ -63,9 +63,6 @@
 //   MSP5611 I2C temp/baro sensor
 //   BMP280 I2C Barometric Pressure sensor
 //   SHT1X temperature/humidity sensors
-
-//   Experimental/Preliminary:
-//   =========================
 //   Ser2Net server
 
 // ********************************************************************************
@@ -121,9 +118,16 @@
 #define ESP_PROJECT_PID           2015050101L
 #define ESP_EASY
 #define VERSION                             9
-#define BUILD                             131
+#define BUILD                             148
 #define BUILD_NOTES                        ""
 #define FEATURE_SPIFFS                  false
+
+#define NODE_TYPE_ID_ESP_EASY_STD           1
+#define NODE_TYPE_ID_ESP_EASYM_STD         17
+#define NODE_TYPE_ID_ESP_EASY32_STD        33
+#define NODE_TYPE_ID_ARDUINO_EASY_STD      65
+#define NODE_TYPE_ID_NANO_EASY_STD         81
+#define NODE_TYPE_ID                       NODE_TYPE_ID_ESP_EASY_STD
 
 #define CPLUGIN_PROTOCOL_ADD                1
 #define CPLUGIN_PROTOCOL_TEMPLATE           2
@@ -183,6 +187,7 @@
 #define SENSOR_TYPE_SWITCH                 10
 #define SENSOR_TYPE_DIMMER                 11
 #define SENSOR_TYPE_LONG                   20
+#define SENSOR_TYPE_WIND                   21
 
 #define PLUGIN_INIT_ALL                     1
 #define PLUGIN_INIT                         2
@@ -214,11 +219,13 @@
 #define BOOT_CAUSE_COLD_BOOT                1
 #define BOOT_CAUSE_EXT_WD                  10
 
+#include "Version.h"
 #include <ESP8266WiFi.h>
 #include <DNSServer.h>
 #include <WiFiUdp.h>
 #include <ESP8266WebServer.h>
 #include <Wire.h>
+#include <SPI.h>
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
 #include <LiquidCrystal_I2C.h>
@@ -342,6 +349,7 @@ struct SettingsStruct
   unsigned long ConnectionFailuresThreshold;
   int16_t       TimeZone;
   boolean       MQTTRetainFlag;
+  boolean       InitSPI;
 } Settings;
 
 struct ExtraTaskSettingsStruct
@@ -409,6 +417,9 @@ struct NodeStruct
 {
   byte ip[4];
   byte age;
+  uint16_t build;
+  char* nodeName;
+  byte nodeType;
 } Nodes[UNIT_MAX];
 
 struct systemTimerStruct
@@ -487,6 +498,9 @@ unsigned long loopCounterMax = 1;
 unsigned long flashWrites = 0;
 
 String eventBuffer = "";
+
+// Blynk_get prototype
+boolean Blynk_get(String command,float *data = NULL );
 
 /*********************************************************************************************\
  * SETUP
@@ -597,19 +611,13 @@ void setup()
 
     saveToRTC(0);
 
-    if (Settings.UseRules)
-    {
-      String event = F("System#Boot");
-      rulesProcessing(event);
-    }
-
     // Setup timers
     if (bootMode == 0)
     {
       for (byte x = 0; x < TASKS_MAX; x++)
         if (Settings.TaskDeviceTimer[x] !=0)
           timerSensor[x] = millis() + 30000 + (x * Settings.MessageDelay);
-      
+
       timer = millis() + 30000; // startup delay 30 sec
     }
     else
@@ -637,6 +645,12 @@ void setup()
     // (captive portal concept)
     if (wifiSetup)
       dnsServer.start(DNS_PORT, "*", apIP);
+
+    if (Settings.UseRules)
+    {
+      String event = F("System#Boot");
+      rulesProcessing(event);
+    }
 
   }
   else
@@ -802,7 +816,7 @@ void runEach30Seconds()
     loopCounterMax = loopCounterLast;
 
   WifiCheck();
-  
+
 }
 
 
@@ -822,6 +836,8 @@ void checkSensors()
       saveToRTC(1);
       String log = F("Enter deep sleep...");
       addLog(LOG_LEVEL_INFO, log);
+      String event = F("System#Sleep");
+      rulesProcessing(event);
       ESP.deepSleep(Settings.Delay * 1000000, WAKE_RF_DEFAULT); // Sleep for set delay
     }
   }
@@ -884,7 +900,7 @@ void SensorSendTask(byte TaskIndex)
     if (success)
     {
       for (byte varNr = 0; varNr < VARS_PER_TASK; varNr++)
-      {  
+      {
         if (ExtraTaskSettings.TaskDeviceFormula[varNr][0] != 0)
         {
           String spreValue = String(preValue[varNr]);
@@ -1003,6 +1019,6 @@ void backgroundtasks()
   WebServer.handleClient();
   MQTTclient.loop();
   statusLED(false);
+  checkUDP();
   yield();
 }
-

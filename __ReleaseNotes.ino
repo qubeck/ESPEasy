@@ -1,3 +1,70 @@
+// R148 02-12-2016
+// Fixed a bug in ADS1115 plugin (contributed by Shardan)
+// Fixed a bug on R146 Ser2Net
+
+// R147 27-11-2016
+// Fixed a situation where a large message delay uses background processing without UPD handling, causing network issues.
+
+// R146 20-11-2016
+// Fixed a bug in PLUGIN_SERIAL/UDP calls where eventstruct data was not prepared
+//   Ser2Net plugin RXWait would only work as expected on task 1
+
+// R145 13-11-2016
+// Removed controller specific code from the framework (Domoticz test routines)
+// Fixed device table display
+
+// R144 12-11-2016
+// Fixed PCA Plugin init (contributed by thexperiments)
+
+// R143 02-11-2016
+// Added nodeType for future use
+
+// R142 26-10-2016
+// Fixed some more missing I2C scanner devices. Changed 'known' into 'supported'
+// Changed help items to www.letscontrolit.com/wiki
+// Added a retry mechanisme on NTP response failures, to minimize booting with time set to zero...
+
+// R141 21-10-2016
+// Fixed pulsecounter value display style elements
+// Fixed some missing I2C scanner 'known devices'
+
+// R140 16-10-2016
+// Added PCF8574A at default address as known device
+
+// R139 14-10-2016
+// Fixed a bug with Domoticz MQTT protocol. Broken as of R109, due to the new pubsub library
+//   It also needs a patched pubsub library!
+//   Also fixed a specific crash situation on invalid data
+
+// R138 10-10-2016
+// Fixed publish command
+// Fixed boot event, triggered after getting the system time
+
+// R137 09-10-2016
+// Added formula option for pow calculations like 2^3 in (contributed by pm-cz)
+
+// R136 07-10-2016
+// Added NodeMCU/Wemos pin numbers (contributed by nonflammable)
+// Added Pressure altitude adjustment to pressure sensors (contributed by adrianmihalko/pm-cz)
+
+// R135 05-10-2016
+// Added build and unit name to the node list
+
+// R134 04-10-2016
+// Corrected Typo and password field type change
+// Added %eventvalue% that can substitute the event value in actions
+// Added total to the pulse counter as single value (not persistent counter!) (contributed by fvdpol)
+// Added authentication to http controller (contributed by marcfon)
+// Added SPI support in hardware tab (contributed by moelski)
+// Added NodeMCU/Wemos pin numbering to GPIO list (contributed by moelski)
+
+// R133 26-09-2016
+// Added rule events to SerialServer and SerialSend command
+// Changed 'wrap on' to 'wrap off' in rules editor
+
+// R132 24-09-2016
+// Moved ISR handlers for Pulse, RFID and HCSR04 plugins to iram cache
+
 // R131 11-09-2016
 // Added flash write counter (count since boot), displayed in webgui
 // Update plugin BME280 for calibration data on multiple sensors (contributed by maxx333)

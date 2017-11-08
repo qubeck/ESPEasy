@@ -27,7 +27,7 @@ boolean CPlugin_001(byte function, struct EventStruct *event, String& string)
         string = F(CPLUGIN_NAME_001);
         break;
       }
-      
+
     case CPLUGIN_PROTOCOL_SEND:
       {
         String authHeader = "";
@@ -39,7 +39,7 @@ boolean CPlugin_001(byte function, struct EventStruct *event, String& string)
           auth += SecuritySettings.ControllerPassword;
           authHeader = "Authorization: Basic " + encoder.encode(auth) + " \r\n";
         }
-        
+
         char log[80];
         boolean success = false;
         char host[20];
@@ -80,13 +80,14 @@ boolean CPlugin_001(byte function, struct EventStruct *event, String& string)
             url += toString(UserVar[event->BaseVarIndex],ExtraTaskSettings.TaskDeviceValueDecimals[0]);
             url += ";";
             url += toString(UserVar[event->BaseVarIndex + 1],ExtraTaskSettings.TaskDeviceValueDecimals[1]);
-            break;            
+            break;
           case SENSOR_TYPE_TEMP_HUM:                      // temp + hum + hum_stat, used for DHT11
             url += F("&svalue=");
             url += toString(UserVar[event->BaseVarIndex],ExtraTaskSettings.TaskDeviceValueDecimals[0]);
             url += ";";
             url += toString(UserVar[event->BaseVarIndex + 1],ExtraTaskSettings.TaskDeviceValueDecimals[1]);
-            url += ";0";
+            url += ";";
+            url += humStat(UserVar[event->BaseVarIndex + 1]);
             break;
           case SENSOR_TYPE_TEMP_BARO:                      // temp + hum + hum_stat + bar + bar_fore, used for BMP085
             url += F("&svalue=");
@@ -100,7 +101,9 @@ boolean CPlugin_001(byte function, struct EventStruct *event, String& string)
             url += toString(UserVar[event->BaseVarIndex],ExtraTaskSettings.TaskDeviceValueDecimals[0]);
             url += ";";
             url += toString(UserVar[event->BaseVarIndex + 1],ExtraTaskSettings.TaskDeviceValueDecimals[1]);
-            url += ";0;";
+            url += ";";
+            url += humStat(UserVar[event->BaseVarIndex + 1]);
+            url += ";";
             url += toString(UserVar[event->BaseVarIndex + 2],ExtraTaskSettings.TaskDeviceValueDecimals[2]);
             url += ";0";
             break;
@@ -125,6 +128,19 @@ boolean CPlugin_001(byte function, struct EventStruct *event, String& string)
               url += UserVar[event->BaseVarIndex];
             }
             break;
+
+#ifdef PLUGIN_186
+            case (SENSOR_TYPE_WIND):
+              url += F("&svalue=");
+              url += toString(UserVar[event->BaseVarIndex],ExtraTaskSettings.TaskDeviceValueDecimals[0]);
+              char* bearing[] = {";N;",";NNE;",";NE;",";ENE;",";E;",";ESE;",";SE;",";SSE;",";S;",";SSW;",";SW;",";WSW;",";W;",";WNW;",";NW;",";NNW;" };
+              url += bearing[int(UserVar[event->BaseVarIndex] / 22.5)];
+              url += toString(UserVar[event->BaseVarIndex + 1],ExtraTaskSettings.TaskDeviceValueDecimals[1]);
+              url += ";";
+              url += toString(UserVar[event->BaseVarIndex + 2],ExtraTaskSettings.TaskDeviceValueDecimals[2]);
+              url += ";0";
+              break;
+#endif
         }
 
         url.toCharArray(log, 80);
@@ -132,7 +148,7 @@ boolean CPlugin_001(byte function, struct EventStruct *event, String& string)
 
         // This will send the request to the server
         client.print(String("GET ") + url + " HTTP/1.1\r\n" +
-                     "Host: " + host + "\r\n" + authHeader + 
+                     "Host: " + host + "\r\n" + authHeader +
                      "Connection: close\r\n\r\n");
 
         unsigned long timer = millis() + 200;
@@ -165,51 +181,17 @@ boolean CPlugin_001(byte function, struct EventStruct *event, String& string)
   return success;
 }
 
-boolean Domoticz_getData(int idx, float *data)
-{
-  boolean success = false;
-  char host[20];
-  sprintf_P(host, PSTR("%u.%u.%u.%u"), Settings.Controller_IP[0], Settings.Controller_IP[1], Settings.Controller_IP[2], Settings.Controller_IP[3]);
+int humStat(int hum){
+  int lHumStat;
+  if(hum<30){
+     lHumStat = 2;
+  }else if(hum<40){
+    lHumStat = 0;
+  }else if(hum<59){
+    lHumStat = 1;
+  }else{
+    lHumStat = 3;
 
-  // Use WiFiClient class to create TCP connections
-  WiFiClient client;
-  if (!client.connect(host, Settings.ControllerPort))
-  {
-    connectionFailures++;
-    return false;
   }
-  if (connectionFailures)
-    connectionFailures--;
-
-  // We now create a URI for the request
-  String url = F("/json.htm?type=devices&rid=");
-  url += idx;
-
-  // This will send the request to the server
-  client.print(String("GET ") + url + " HTTP/1.1\r\n" +
-               "Host: " + host + "\r\n" +
-               "Connection: close\r\n\r\n");
-
-  unsigned long timer = millis() + 200;
-  while (!client.available() && millis() < timer)
-    delay(1);
-
-  // Read all the lines of the reply from server and print them to Serial
-
-  while (client.available()) {
-    String line = client.readStringUntil('\n');
-    if (line.substring(10, 14) == "Data")
-    {
-      String strValue = line.substring(19);
-      byte pos = strValue.indexOf(' ');
-      strValue = strValue.substring(0, pos);
-      strValue.trim();
-      float value = strValue.toFloat();
-      *data = value;
-      success = true;
-    }
-  }
-  return success;
+  return lHumStat;
 }
-
-

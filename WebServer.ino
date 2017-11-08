@@ -126,7 +126,7 @@ void addHeader(boolean showMenu, String& str)
 //********************************************************************************
 void addFooter(String& str)
 {
-  str += F("<h6>Powered by www.esp8266.nu</h6></body>");
+  str += F("<h6>Powered by www.letscontrolit.com</h6></body>");
 }
 
 
@@ -210,6 +210,21 @@ void handle_root() {
     reply += F(" ");
     reply += F(BUILD_NOTES);
 
+    reply += F("<TR><TD>GIT version:<TD>");
+    reply += F(BUILD_GIT);
+
+    reply += F("<TR><TD>Plugin sets:<TD>");
+#ifdef PLUGIN_BUILD_DEV
+    reply += F("Normal, Testing, Development");
+#elif PLUGIN_BUILD_TESTING
+    reply += F("Normal, Testing");
+#elif PLUGIN_BUILD_NORMAL
+    reply += F("Normal");
+#else
+    reply += F("Minimal");
+#endif
+
+
     reply += F("<TR><TD>Core Version:<TD>");
     reply += ESP.getCoreVersion();
 
@@ -250,6 +265,9 @@ void handle_root() {
     reply += F("<TR><TD>Free Mem:<TD>");
     reply += freeMem;
 
+    reply += F("<TR><TD>Devices:<TD>");
+    reply += deviceCount + 1;
+
     reply += F("<TR><TD>Boot cause:<TD>");
     switch (lastBootCause)
     {
@@ -264,23 +282,47 @@ void handle_root() {
         break;
     }
 
-    reply += F("<TR><TH>Node List:<TH>IP<TH>Age<TR><TD><TD>");
+    reply += F("<TR><TH>Node List:<TH>Name<TH>Build<TH>Type<TH>IP<TH>Age<TR><TD><TD>");
     for (byte x = 0; x < UNIT_MAX; x++)
     {
       if (Nodes[x].ip[0] != 0)
       {
-        if (x == Settings.Unit)
-          reply += F("<font color='blue'>");
         char url[80];
         sprintf_P(url, PSTR("<a href='http://%u.%u.%u.%u'>%u.%u.%u.%u</a>"), Nodes[x].ip[0], Nodes[x].ip[1], Nodes[x].ip[2], Nodes[x].ip[3], Nodes[x].ip[0], Nodes[x].ip[1], Nodes[x].ip[2], Nodes[x].ip[3]);
         reply += F("<TR><TD>Unit ");
         reply += x;
-        reply += F(":<TD>");
+        reply += F("<TD>");
+        if (x != Settings.Unit)
+          reply += Nodes[x].nodeName;
+        else
+          reply += Settings.Name;
+        reply += F("<TD>");
+        if (Nodes[x].build)
+          reply += Nodes[x].build;
+        reply += F("<TD>");
+        if (Nodes[x].nodeType)
+          switch (Nodes[x].nodeType)
+          {
+            case NODE_TYPE_ID_ESP_EASY_STD:
+              reply += F("ESP Easy");
+              break;
+            case NODE_TYPE_ID_ESP_EASYM_STD:
+              reply += F("ESP Easy Mega");
+              break;
+            case NODE_TYPE_ID_ESP_EASY32_STD:
+              reply += F("ESP Easy 32");
+              break;
+            case NODE_TYPE_ID_ARDUINO_EASY_STD:
+              reply += F("Arduino Easy");
+              break;
+            case NODE_TYPE_ID_NANO_EASY_STD:
+              reply += F("Nano Easy");
+              break;
+          }
+        reply += F("<TD>");
         reply += url;
         reply += F("<TD>");
         reply += Nodes[x].age;
-        if (x == Settings.Unit)
-          reply += F("</font color>");
       }
     }
 
@@ -411,7 +453,7 @@ void handle_config() {
   reply += SecuritySettings.Password;
   reply += F("'><TR><TD>SSID:<TD><input type='text' name='ssid' value='");
   reply += SecuritySettings.WifiSSID;
-  reply += F("'><TR><TD>WPA Key:<TD><input type='text' maxlength='63' name='key' value='");
+  reply += F("'><TR><TD>WPA Key:<TD><input type='password' maxlength='63' name='key' value='");
   reply += SecuritySettings.WifiKey;
 
   reply += F("'><TR><TD>WPA AP Mode Key:<TD><input type='text' maxlength='63' name='apkey' value='");
@@ -439,7 +481,7 @@ void handle_config() {
     reply += F("</option>");
   }
   reply += F("</select>");
-  reply += F("<a class=\"button-link\" href=\"http://www.esp8266.nu/index.php/EasyProtocols\" target=\"_blank\">?</a>");
+  reply += F("<a class=\"button-link\" href=\"http://www.letscontrolit.com/wiki/index.php/EasyProtocols\" target=\"_blank\">?</a>");
 
 
   char str[20];
@@ -508,7 +550,7 @@ void handle_config() {
   else
     reply += F("<input type=checkbox name='deepsleep'>");
 
-  reply += F("<a class=\"button-link\" href=\"http://www.esp8266.nu/index.php/SleepMode\" target=\"_blank\">?</a>");
+  reply += F("<a class=\"button-link\" href=\"http://www.letscontrolit.com/wiki/index.php/SleepMode\" target=\"_blank\">?</a>");
 
   reply += F("<TR><TH>Optional Settings<TH>");
 
@@ -562,6 +604,8 @@ void handle_hardware() {
     Settings.PinBootStates[15] =  WebServer.arg("p15").toInt();
     Settings.PinBootStates[16] =  WebServer.arg("p16").toInt();
 
+    Settings.InitSPI = WebServer.arg("initspi") == "on";      // SPI Init
+
     SaveSettings();
   }
 
@@ -576,28 +620,36 @@ void handle_hardware() {
   reply += F("<TR><TD>SCL:<TD>");
   addPinSelect(true, reply, "pscl", Settings.Pin_i2c_scl);
 
+  // SPI Init
+  reply += F("<TR><TD>Init SPI:<TD>");
+  if (Settings.InitSPI)
+    reply += F("<input type=checkbox id='initspi'  name='initspi' checked>&nbsp;");
+  else
+    reply += F("<input type=checkbox id='initspi' name='initspi'>&nbsp;");
+  reply += F("(Note : Chip Select (CS) config must be done in the plugin)");
+
   reply += F("<TR><TD>GPIO boot states:<TD>");
-  reply += F("<TR><TD>Pin mode 0:<TD>");
+  reply += F("<TR><TD>Pin mode 0 (D3):<TD>");
   addPinStateSelect(reply, "p0", Settings.PinBootStates[0]);
-  reply += F("<TR><TD>Pin mode 2:<TD>");
+  reply += F("<TR><TD>Pin mode 2 (D4):<TD>");
   addPinStateSelect(reply, "p2", Settings.PinBootStates[2]);
-  reply += F("<TR><TD>Pin mode 4:<TD>");
+  reply += F("<TR><TD>Pin mode 4 (D2):<TD>");
   addPinStateSelect(reply, "p4", Settings.PinBootStates[4]);
-  reply += F("<TR><TD>Pin mode 5:<TD>");
+  reply += F("<TR><TD>Pin mode 5 (D1):<TD>");
   addPinStateSelect(reply, "p5", Settings.PinBootStates[5]);
-  reply += F("<TR><TD>Pin mode 9:<TD>");
+  reply += F("<TR><TD>Pin mode 9 (D11):<TD>");
   addPinStateSelect(reply, "p9", Settings.PinBootStates[9]);
-  reply += F("<TR><TD>Pin mode 10:<TD>");
+  reply += F("<TR><TD>Pin mode 10 (D12):<TD>");
   addPinStateSelect(reply, "p10", Settings.PinBootStates[10]);
-  reply += F("<TR><TD>Pin mode 12:<TD>");
+  reply += F("<TR><TD>Pin mode 12 (D6):<TD>");
   addPinStateSelect(reply, "p12", Settings.PinBootStates[12]);
-  reply += F("<TR><TD>Pin mode 13:<TD>");
+  reply += F("<TR><TD>Pin mode 13 (D7):<TD>");
   addPinStateSelect(reply, "p13", Settings.PinBootStates[13]);
-  reply += F("<TR><TD>Pin mode 14:<TD>");
+  reply += F("<TR><TD>Pin mode 14 (D5):<TD>");
   addPinStateSelect(reply, "p14", Settings.PinBootStates[14]);
-  reply += F("<TR><TD>Pin mode 15:<TD>");
+  reply += F("<TR><TD>Pin mode 15 (D8):<TD>");
   addPinStateSelect(reply, "p15", Settings.PinBootStates[15]);
-  reply += F("<TR><TD>Pin mode 16:<TD>");
+  reply += F("<TR><TD>Pin mode 16 (D0):<TD>");
   addPinStateSelect(reply, "p16", Settings.PinBootStates[16]);
 
   reply += F("<TR><TD><TD><input class=\"button-link\" type='submit' value='Submit'><TR><TD>");
@@ -710,6 +762,12 @@ void handle_devices() {
     {
       taskClear(index - 1, false); // clear settings, but do not save
       Settings.TaskDeviceNumber[index - 1] = taskdevicenumber.toInt();
+      if (taskdevicenumber.toInt() != 0) // preload valuenames
+      {
+        TempEvent.TaskIndex = index - 1;
+        if (ExtraTaskSettings.TaskDeviceValueNames[0][0] == 0) // if field set empty, reload defaults
+          PluginCall(PLUGIN_GET_DEVICEVALUENAMES, &TempEvent, dummyString);
+      }
     }
     else if (taskdevicenumber.toInt() != 0)
     {
@@ -775,13 +833,16 @@ void handle_devices() {
       }
 
       // task value names handling.
-      TempEvent.TaskIndex = index - 1;
       for (byte varNr = 0; varNr < Device[DeviceIndex].ValueCount; varNr++)
       {
         taskdevicevaluename[varNr].toCharArray(tmpString, 41);
         strcpy(ExtraTaskSettings.TaskDeviceValueNames[varNr], tmpString);
       }
+
       TempEvent.TaskIndex = index - 1;
+      if (ExtraTaskSettings.TaskDeviceValueNames[0][0] == 0) // if field set empty, reload defaults
+        PluginCall(PLUGIN_GET_DEVICEVALUENAMES, &TempEvent, dummyString);
+
       PluginCall(PLUGIN_WEBFORM_SAVE, &TempEvent, dummyString);
     }
     SaveTaskSettings(index - 1);
@@ -792,7 +853,6 @@ void handle_devices() {
 
   String reply = "";
   addHeader(true, reply);
-
 
   // show all tasks as table
   if (index == 0)
@@ -817,17 +877,6 @@ void handle_devices() {
 
     for (byte x = (page - 1) * 4; x < ((page) * 4); x++)
     {
-      LoadTaskSettings(x);
-      DeviceIndex = getDeviceIndex(Settings.TaskDeviceNumber[x]);
-      TempEvent.TaskIndex = x;
-
-      if (ExtraTaskSettings.TaskDeviceValueNames[0][0] == 0)
-        PluginCall(PLUGIN_GET_DEVICEVALUENAMES, &TempEvent, dummyString);
-
-      deviceName = "";
-      if (Settings.TaskDeviceNumber[x] != 0)
-        Plugin_ptr[DeviceIndex](PLUGIN_GET_DEVICENAME, &TempEvent, deviceName);
-
       reply += F("<TR><TD>");
       reply += F("<a class=\"button-link\" href=\"devices?index=");
       reply += x + 1;
@@ -837,86 +886,100 @@ void handle_devices() {
       reply += F("<TD>");
       reply += x + 1;
       reply += F("<TD>");
-      reply += deviceName;
-      reply += F("<TD>");
-      reply += ExtraTaskSettings.TaskDeviceName;
-      reply += F("<TD>");
 
-      byte customConfig = false;
-      customConfig = PluginCall(PLUGIN_WEBFORM_SHOW_CONFIG, &TempEvent, reply);
-      if (!customConfig)
-        if (Device[DeviceIndex].Ports != 0)
-          reply += Settings.TaskDevicePort[x];
-
-      reply += F("<TD>");
-
-      if (Settings.TaskDeviceID[x] != 0)
-        reply += Settings.TaskDeviceID[x];
-
-      reply += F("<TD>");
-
-      if (Settings.TaskDeviceDataFeed[x] == 0)
+      if (Settings.TaskDeviceNumber[x] != 0)
       {
-        if (Device[DeviceIndex].Type == DEVICE_TYPE_I2C)
-        {
-          reply += F("GPIO-");
-          reply += Settings.Pin_i2c_sda;
-          reply += F("<BR>GPIO-");
-          reply += Settings.Pin_i2c_scl;
-        }
-        if (Device[DeviceIndex].Type == DEVICE_TYPE_ANALOG)
-          reply += F("ADC (TOUT)");
+        LoadTaskSettings(x);
+        DeviceIndex = getDeviceIndex(Settings.TaskDeviceNumber[x]);
+        TempEvent.TaskIndex = x;
 
-        if (Settings.TaskDevicePin1[x] != -1)
-        {
-          reply += F("GPIO-");
-          reply += Settings.TaskDevicePin1[x];
-        }
+        deviceName = "";
+        Plugin_ptr[DeviceIndex](PLUGIN_GET_DEVICENAME, &TempEvent, deviceName);
 
-        if (Settings.TaskDevicePin2[x] != -1)
-        {
-          reply += F("<BR>GPIO-");
-          reply += Settings.TaskDevicePin2[x];
-        }
+        reply += deviceName;
+        reply += F("<TD>");
+        reply += ExtraTaskSettings.TaskDeviceName;
+        reply += F("<TD>");
 
-        if (Settings.TaskDevicePin3[x] != -1)
-        {
-          reply += F("<BR>GPIO-");
-          reply += Settings.TaskDevicePin3[x];
-        }
-      }
+        byte customConfig = false;
+        customConfig = PluginCall(PLUGIN_WEBFORM_SHOW_CONFIG, &TempEvent, reply);
+        if (!customConfig)
+          if (Device[DeviceIndex].Ports != 0)
+            reply += Settings.TaskDevicePort[x];
 
-      reply += F("<TD>");
-      byte customValues = false;
-      customValues = PluginCall(PLUGIN_WEBFORM_SHOW_VALUES, &TempEvent, reply);
-      if (!customValues)
-      {
-        if (Device[DeviceIndex].VType == SENSOR_TYPE_LONG)
+        reply += F("<TD>");
+
+        if (Settings.TaskDeviceID[x] != 0)
+          reply += Settings.TaskDeviceID[x];
+
+        reply += F("<TD>");
+
+        if (Settings.TaskDeviceDataFeed[x] == 0)
         {
-          reply  += F("<div class=\"div_l\">");
-          reply  += ExtraTaskSettings.TaskDeviceValueNames[0];
-          reply  += F(":</div><div class=\"div_r\">");
-          reply  += (unsigned long)UserVar[x * VARS_PER_TASK] + ((unsigned long)UserVar[x * VARS_PER_TASK + 1] << 16);
-          reply  += F("</div>");
-        }
-        else
-        {
-          for (byte varNr = 0; varNr < VARS_PER_TASK; varNr++)
+          if (Device[DeviceIndex].Type == DEVICE_TYPE_I2C)
           {
-            if ((Settings.TaskDeviceNumber[x] != 0) and (varNr < Device[DeviceIndex].ValueCount))
+            reply += F("GPIO-");
+            reply += Settings.Pin_i2c_sda;
+            reply += F("<BR>GPIO-");
+            reply += Settings.Pin_i2c_scl;
+          }
+          if (Device[DeviceIndex].Type == DEVICE_TYPE_ANALOG)
+            reply += F("ADC (TOUT)");
+
+          if (Settings.TaskDevicePin1[x] != -1)
+          {
+            reply += F("GPIO-");
+            reply += Settings.TaskDevicePin1[x];
+          }
+
+          if (Settings.TaskDevicePin2[x] != -1)
+          {
+            reply += F("<BR>GPIO-");
+            reply += Settings.TaskDevicePin2[x];
+          }
+
+          if (Settings.TaskDevicePin3[x] != -1)
+          {
+            reply += F("<BR>GPIO-");
+            reply += Settings.TaskDevicePin3[x];
+          }
+        }
+
+        reply += F("<TD>");
+        byte customValues = false;
+        customValues = PluginCall(PLUGIN_WEBFORM_SHOW_VALUES, &TempEvent, reply);
+        if (!customValues)
+        {
+          if (Device[DeviceIndex].VType == SENSOR_TYPE_LONG)
+          {
+            reply  += F("<div class=\"div_l\">");
+            reply  += ExtraTaskSettings.TaskDeviceValueNames[0];
+            reply  += F(":</div><div class=\"div_r\">");
+            reply  += (unsigned long)UserVar[x * VARS_PER_TASK] + ((unsigned long)UserVar[x * VARS_PER_TASK + 1] << 16);
+            reply  += F("</div>");
+          }
+          else
+          {
+            for (byte varNr = 0; varNr < VARS_PER_TASK; varNr++)
             {
-              if (varNr > 0)
-                reply += F("<div class=\"div_br\"></div>");
-              reply += F("<div class=\"div_l\">");
-              reply += ExtraTaskSettings.TaskDeviceValueNames[varNr];
-              reply += F(":</div><div class=\"div_r\">");
-              reply += String(UserVar[x * VARS_PER_TASK + varNr], ExtraTaskSettings.TaskDeviceValueDecimals[varNr]);
-              reply += "</div>";
+              if ((Settings.TaskDeviceNumber[x] != 0) and (varNr < Device[DeviceIndex].ValueCount))
+              {
+                if (varNr > 0)
+                  reply += F("<div class=\"div_br\"></div>");
+                reply += F("<div class=\"div_l\">");
+                reply += ExtraTaskSettings.TaskDeviceValueNames[varNr];
+                reply += F(":</div><div class=\"div_r\">");
+                reply += String(UserVar[x * VARS_PER_TASK + varNr], ExtraTaskSettings.TaskDeviceValueDecimals[varNr]);
+                reply += "</div>";
+              }
             }
           }
         }
       }
-    }
+      else
+        reply += F("<TD><TD><TD><TD><TD>");
+
+    }  // next
     reply += F("</table>");
   }
   // Show edit form if a specific entry is chosen with the edit button
@@ -926,9 +989,6 @@ void handle_devices() {
     DeviceIndex = getDeviceIndex(Settings.TaskDeviceNumber[index - 1]);
     TempEvent.TaskIndex = index - 1;
 
-    if (ExtraTaskSettings.TaskDeviceValueNames[0][0] == 0)
-      PluginCall(PLUGIN_GET_DEVICEVALUENAMES, &TempEvent, dummyString);
-
     reply += F("<BR><BR><form name='frmselect' method='post'><table><TH>Task Settings<TH>Value");
 
     reply += F("<TR><TD>Device:<TD>");
@@ -936,7 +996,7 @@ void handle_devices() {
 
     if (Settings.TaskDeviceNumber[index - 1] != 0 )
     {
-      reply += F("<a class=\"button-link\" href=\"http://www.esp8266.nu/index.php/plugin");
+      reply += F("<a class=\"button-link\" href=\"http://www.letscontrolit.com/wiki/index.php/Plugin");
       reply += Settings.TaskDeviceNumber[index - 1];
       reply += F("\" target=\"_blank\">?</a>");
 
@@ -1043,7 +1103,7 @@ void handle_devices() {
             reply += F("'>");
 
             if (varNr == 0)
-              reply += F("<a class=\"button-link\" href=\"http://www.esp8266.nu/index.php/EasyFormula\" target=\"_blank\">?</a>");
+              reply += F("<a class=\"button-link\" href=\"http://www.letscontrolit.com/wiki/index.php/EasyFormula\" target=\"_blank\">?</a>");
           }
         }
         else
@@ -1213,19 +1273,19 @@ void addPinSelect(boolean forI2C, String& str, String name,  int choice)
 {
   String options[14];
   options[0] = F(" ");
-  options[1] = F("GPIO-0");
-  options[2] = F("GPIO-1");
-  options[3] = F("GPIO-2");
-  options[4] = F("GPIO-3");
-  options[5] = F("GPIO-4");
-  options[6] = F("GPIO-5");
-  options[7] = F("GPIO-9");
-  options[8] = F("GPIO-10");
-  options[9] = F("GPIO-12");
-  options[10] = F("GPIO-13");
-  options[11] = F("GPIO-14");
-  options[12] = F("GPIO-15");
-  options[13] = F("GPIO-16");
+  options[1] = F("GPIO-0 (D3)");
+  options[2] = F("GPIO-1 (D10)");
+  options[3] = F("GPIO-2 (D4)");
+  options[4] = F("GPIO-3 (D9)");
+  options[5] = F("GPIO-4 (D2)");
+  options[6] = F("GPIO-5 (D1)");
+  options[7] = F("GPIO-9 (D11)");
+  options[8] = F("GPIO-10 (D12)");
+  options[9] = F("GPIO-12 (D6)");
+  options[10] = F("GPIO-13 (D7)");
+  options[11] = F("GPIO-14 (D5)");
+  options[12] = F("GPIO-15 (D8)");
+  options[13] = F("GPIO-16 (D0)");
   int optionValues[14];
   optionValues[0] = -1;
   optionValues[1] = 0;
@@ -1394,7 +1454,7 @@ void handle_tools() {
   if (ESP.getFlashChipRealSize() > 524288)
   {
     reply += F("<TR><TD>Firmware<TD><a class=\"button-link\" href=\"/update\">Load</a>");
-    reply += F("<a class=\"button-link\" href=\"http://www.esp8266.nu/index.php/EasyOTA\" target=\"_blank\">?</a>");
+    reply += F("<a class=\"button-link\" href=\"http://www.letscontrolit.com/wiki/index.php/EasyOTA\" target=\"_blank\">?</a>");
   }
 #if FEATURE_SPIFFS
   reply += F("<a class=\"button-link\" href=\"/filelist\">List</a><BR><BR>");
@@ -1443,7 +1503,7 @@ void handle_i2cscanner() {
 
   String reply = "";
   addHeader(true, reply);
-  reply += F("<table><TH>I2C Addresses in use<TH>Known devices");
+  reply += F("<table cellpadding='4' border='1' frame='box' rules='all'><TH>I2C Addresses in use<TH>Supported devices");
 
   byte error, address;
   int nDevices;
@@ -1460,46 +1520,72 @@ void handle_i2cscanner() {
       switch (address)
       {
         case 0x20:
+        case 0x21:
+        case 0x22:
+        case 0x25:
+        case 0x26:
         case 0x27:
-        case 0x3F:
-          reply += F("PCF8574, MCP23017, LCD Modules");
+          reply += F("PCF8574<BR>MCP23017<BR>LCD");
           break;
         case 0x23:
-          reply += F("BH1750 Lux Sensor");
+          reply += F("PCF8574<BR>MCP23017<BR>LCD<BR>BH1750");
           break;
         case 0x24:
-          reply += F("PN532 RFID Reader");
+          reply += F("PCF8574<BR>MCP23017<BR>LCD<BR>PN532");
           break;
         case 0x29:
+          reply += F("TLS2561");
+          break;
+        case 0x38:
+        case 0x3A:
+        case 0x3B:
+        case 0x3E:
+        case 0x3F:
+          reply += F("PCF8574A");
+          break;
         case 0x39:
-        case 0x49:
-          reply += F("TLS2561 Lux Sensor");
+          reply += F("PCF8574A<BR>TLS2561");
           break;
         case 0x3C:
         case 0x3D:
-          reply += F("OLED SSD1306 Display");
+          reply += F("PCF8574A<BR>OLED");
           break;
         case 0x40:
-          reply += F("SI7021 Temp/Hum Sensor, INA219, PCA9685");
+          reply += F("SI7021<BR>INA219<BR>PCA9685");
+          break;
+        case 0x41:
+        case 0x42:
+        case 0x43:
+          reply += F("INA219");
           break;
         case 0x48:
-          reply += F("PCF8591 ADC");
+        case 0x4A:
+        case 0x4B:
+          reply += F("PCF8591<BR>ADS1115");
+          break;
+        case 0x49:
+          reply += F("PCF8591<BR>ADS1115<BR>TLS2561");
+          break;
+        case 0x4C:
+        case 0x4D:
+        case 0x4E:
+        case 0x4F:
+          reply += F("PCF8591");
+          break;
+        case 0x5A:
+          reply += F("MLX90614");
           break;
         case 0x5C:
-          reply += F("DHT12/BH1750 Lux Sensor");
-          break;
-        case 0x68:
-          reply += F("DS1307 RTC");
+          reply += F("DHT12<BR>BH1750");
           break;
         case 0x76:
-          reply += F("BME280/BMP280/MS5607/MS5611");
+          reply += F("BME280<BR>BMP280<BR>MS5607<BR>MS5611");
           break;
         case 0x77:
-          reply += F("BMP085/");
-          reply += F("BME280/BMP280/MS5607/MS5611"); //pm-cz Optimization should recycle this string from above
+          reply += F("BMP085<BR>BMP180<BR>BME280<BR>BMP280<BR>MS5607<BR>MS5611");
           break;
         case 0x7f:
-          reply += F("Arduino Pro Mini IO Extender");
+          reply += F("Arduino PME");
           break;
       }
       nDevices++;
@@ -2555,7 +2641,7 @@ void handle_rules() {
 
   // load form data from flash
   reply += F("<form method='post'>");
-  reply += F("<textarea name='rules' rows='15' cols='80' wrap='on'>");
+  reply += F("<textarea name='rules' rows='15' cols='80' wrap='off'>");
 
 #if FEATURE_SPIFFS
   File f = SPIFFS.open("rules.txt", "r+");
@@ -2567,7 +2653,7 @@ void handle_rules() {
       *pointerToByteToRead = f.read();
       pointerToByteToRead++;// next byte
     }
-    data[f.size()]=0;
+    data[f.size()] = 0;
     f.close();
   }
 #else
@@ -2622,4 +2708,3 @@ String URLEncode(const char* msg)
   }
   return encodedMsg;
 }
-

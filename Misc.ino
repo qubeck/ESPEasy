@@ -23,6 +23,9 @@ byte getValueCountFromSensorType(byte sensorType)
       break;
     case SENSOR_TYPE_TEMP_HUM_BARO:
     case SENSOR_TYPE_TRIPLE:
+#ifdef PLUGIN_186
+    case SENSOR_TYPE_WIND:
+#endif
       valueCount = 3;
       break;
     case SENSOR_TYPE_QUAD:
@@ -976,6 +979,7 @@ void ResetFactory(void)
   Settings.MessageDelay = 1000;
   Settings.deepSleep = false;
   Settings.CustomCSS = false;
+  Settings.InitSPI = false;
   for (byte x = 0; x < TASKS_MAX; x++)
   {
     Settings.TaskDevicePin1[x] = -1;
@@ -1325,6 +1329,8 @@ String parseTemplate(String &tmpString, byte lineSize)
   sprintf_P(strIP, PSTR("%u.%u.%u.%u"), ip[0], ip[1], ip[2], ip[3]);
   newString.replace("%ip%", strIP);
 
+  newString.replace("%sysload%", String(100 - (100 * loopCounterLast / loopCounterMax)));
+
   // padding spaces
   while (newString.length() < lineSize)
     newString += " ";
@@ -1348,7 +1354,7 @@ float globalstack[STACK_SIZE];
 float *sp = globalstack - 1;
 float *sp_max = &globalstack[STACK_SIZE - 1];
 
-#define is_operator(c)  (c == '+' || c == '-' || c == '*' || c == '/' )
+#define is_operator(c)  (c == '+' || c == '-' || c == '*' || c == '/' || c == '^')
 
 int push(float value)
 {
@@ -1379,6 +1385,9 @@ float apply_operator(char op, float first, float second)
       return first * second;
     case '/':
       return first / second;
+    case '^':
+      return pow(first, second);
+    default:
       return 0;
   }
 }
@@ -1419,6 +1428,8 @@ int op_preced(const char c)
 {
   switch (c)
   {
+    case '^':
+      return 3;
     case '*':
     case '/':
       return 2;
@@ -1433,6 +1444,7 @@ bool op_left_assoc(const char c)
 {
   switch (c)
   {
+    case '^':
     case '*':
     case '/':
     case '+':
@@ -1447,6 +1459,7 @@ unsigned int op_arg_count(const char c)
 {
   switch (c)
   {
+    case '^':
     case '*':
     case '/':
     case '+':
@@ -1754,59 +1767,65 @@ unsigned long getNtpTime()
 {
   WiFiUDP udp;
   udp.begin(123);
-  String log = F("NTP  : NTP sync requested");
-  addLog(LOG_LEVEL_DEBUG_MORE, log);
+  for (byte x = 1; x < 4; x++)
+  {
+    String log = F("NTP  : NTP sync request:");
+    log += x;
+    addLog(LOG_LEVEL_DEBUG_MORE, log);
 
-  const int NTP_PACKET_SIZE = 48; // NTP time is in the first 48 bytes of message
-  byte packetBuffer[NTP_PACKET_SIZE]; //buffer to hold incoming & outgoing packets
+    const int NTP_PACKET_SIZE = 48; // NTP time is in the first 48 bytes of message
+    byte packetBuffer[NTP_PACKET_SIZE]; //buffer to hold incoming & outgoing packets
 
-  IPAddress timeServerIP;
-  const char* ntpServerName = "pool.ntp.org";
+    IPAddress timeServerIP;
+    const char* ntpServerName = "pool.ntp.org";
 
-  if (Settings.NTPHost[0] != 0)
-    WiFi.hostByName(Settings.NTPHost, timeServerIP);
-  else
-    WiFi.hostByName(ntpServerName, timeServerIP);
+    if (Settings.NTPHost[0] != 0)
+      WiFi.hostByName(Settings.NTPHost, timeServerIP);
+    else
+      WiFi.hostByName(ntpServerName, timeServerIP);
 
-  char host[20];
-  sprintf_P(host, PSTR("%u.%u.%u.%u"), timeServerIP[0], timeServerIP[1], timeServerIP[2], timeServerIP[3]);
-  log = F("NTP  : NTP send to ");
-  log += host;
-  addLog(LOG_LEVEL_DEBUG_MORE, log);
+    char host[20];
+    sprintf_P(host, PSTR("%u.%u.%u.%u"), timeServerIP[0], timeServerIP[1], timeServerIP[2], timeServerIP[3]);
+    log = F("NTP  : NTP send to ");
+    log += host;
+    addLog(LOG_LEVEL_DEBUG_MORE, log);
 
-  while (udp.parsePacket() > 0) ; // discard any previously received packets
+    while (udp.parsePacket() > 0) ; // discard any previously received packets
 
-  memset(packetBuffer, 0, NTP_PACKET_SIZE);
-  packetBuffer[0] = 0b11100011;   // LI, Version, Mode
-  packetBuffer[1] = 0;     // Stratum, or type of clock
-  packetBuffer[2] = 6;     // Polling Interval
-  packetBuffer[3] = 0xEC;  // Peer Clock Precision
-  packetBuffer[12]  = 49;
-  packetBuffer[13]  = 0x4E;
-  packetBuffer[14]  = 49;
-  packetBuffer[15]  = 52;
-  udp.beginPacket(timeServerIP, 123); //NTP requests are to port 123
-  udp.write(packetBuffer, NTP_PACKET_SIZE);
-  udp.endPacket();
+    memset(packetBuffer, 0, NTP_PACKET_SIZE);
+    packetBuffer[0] = 0b11100011;   // LI, Version, Mode
+    packetBuffer[1] = 0;     // Stratum, or type of clock
+    packetBuffer[2] = 6;     // Polling Interval
+    packetBuffer[3] = 0xEC;  // Peer Clock Precision
+    packetBuffer[12]  = 49;
+    packetBuffer[13]  = 0x4E;
+    packetBuffer[14]  = 49;
+    packetBuffer[15]  = 52;
+    udp.beginPacket(timeServerIP, 123); //NTP requests are to port 123
+    udp.write(packetBuffer, NTP_PACKET_SIZE);
+    udp.endPacket();
 
-  uint32_t beginWait = millis();
-  while (millis() - beginWait < 1500) {
-    int size = udp.parsePacket();
-    if (size >= NTP_PACKET_SIZE) {
-      udp.read(packetBuffer, NTP_PACKET_SIZE);  // read packet into the buffer
-      unsigned long secsSince1900;
-      // convert four bytes starting at location 40 to a long integer
-      secsSince1900 =  (unsigned long)packetBuffer[40] << 24;
-      secsSince1900 |= (unsigned long)packetBuffer[41] << 16;
-      secsSince1900 |= (unsigned long)packetBuffer[42] << 8;
-      secsSince1900 |= (unsigned long)packetBuffer[43];
-      log = F("NTP  : NTP replied!");
-      addLog(LOG_LEVEL_DEBUG_MORE, log);
-      return secsSince1900 - 2208988800UL + Settings.TimeZone * SECS_PER_MIN;
+    uint32_t beginWait = millis();
+    while (millis() - beginWait < 1000) {
+      int size = udp.parsePacket();
+      if (size >= NTP_PACKET_SIZE) {
+        udp.read(packetBuffer, NTP_PACKET_SIZE);  // read packet into the buffer
+        unsigned long secsSince1900;
+        // convert four bytes starting at location 40 to a long integer
+        secsSince1900 =  (unsigned long)packetBuffer[40] << 24;
+        secsSince1900 |= (unsigned long)packetBuffer[41] << 16;
+        secsSince1900 |= (unsigned long)packetBuffer[42] << 8;
+        secsSince1900 |= (unsigned long)packetBuffer[43];
+        log = F("NTP  : NTP replied: ");
+        log += millis() - beginWait;
+        log += F(" mSec");
+        addLog(LOG_LEVEL_DEBUG_MORE, log);
+        return secsSince1900 - 2208988800UL + Settings.TimeZone * SECS_PER_MIN;
+      }
     }
+    log = F("NTP  : No reply");
+    addLog(LOG_LEVEL_DEBUG_MORE, log);
   }
-  log = F("NTP  : No reply");
-  addLog(LOG_LEVEL_DEBUG_MORE, log);
   return 0;
 }
 #endif
@@ -1961,6 +1980,12 @@ void rulesProcessing(String& event)
           // process the action if it's a command and unconditional, or conditional and the condition matches the if or else block.
           if (isCommand && ((!conditional) || (conditional && (condition == ifBranche))))
           {
+            int equalsPos = event.indexOf("=");
+            if (equalsPos > 0)
+            {
+              String tmpString = event.substring(equalsPos + 1);
+              action.replace("%eventvalue%", tmpString); // substitute %eventvalue% in actions with the actual value from the event
+            }
             log = F("ACT  : ");
             log += action;
             addLog(LOG_LEVEL_INFO, log);
@@ -1997,6 +2022,15 @@ boolean ruleMatch(String& event, String& rule)
   boolean match = false;
   String tmpEvent = event;
   String tmpRule = rule;
+
+  // Special handling of literal string events, they should start with '!'
+  if (event.charAt(0) == '!')
+  {
+    if (event.equalsIgnoreCase(rule))
+      return true;
+    else
+      return false;
+  }
 
   if (event.startsWith("Clock#Time")) // clock events need different handling...
   {
@@ -2213,3 +2247,177 @@ void createRuleEvents(byte TaskIndex)
     rulesProcessing(eventString);
   }
 }
+
+
+#ifdef PLUGIN_BUILD_TESTING
+
+#define isdigit(n) (n >= '0' && n <= '9')
+
+/********************************************************************************************\
+  Generate a tone of specified frequency on pin
+  \*********************************************************************************************/
+void tone(uint8_t _pin, unsigned int frequency, unsigned long duration) {
+  analogWriteFreq(frequency);
+  analogWrite(_pin,100);
+  delay(duration);
+  analogWrite(_pin,0);
+}
+
+/********************************************************************************************\
+  Play RTTTL string on specified pin
+  \*********************************************************************************************/
+void play_rtttl(uint8_t _pin, char *p )
+{
+  #define OCTAVE_OFFSET 0
+  // Absolutely no error checking in here
+
+  int notes[] = { 0,
+    262, 277, 294, 311, 330, 349, 370, 392, 415, 440, 466, 494,
+    523, 554, 587, 622, 659, 698, 740, 784, 831, 880, 932, 988,
+    1047, 1109, 1175, 1245, 1319, 1397, 1480, 1568, 1661, 1760, 1865, 1976,
+    2093, 2217, 2349, 2489, 2637, 2794, 2960, 3136, 3322, 3520, 3729, 3951
+  };
+
+
+
+  byte default_dur = 4;
+  byte default_oct = 6;
+  int bpm = 63;
+  int num;
+  long wholenote;
+  long duration;
+  byte note;
+  byte scale;
+
+  // format: d=N,o=N,b=NNN:
+  // find the start (skip name, etc)
+
+  while(*p != ':') p++;    // ignore name
+  p++;                     // skip ':'
+
+  // get default duration
+  if(*p == 'd')
+  {
+    p++; p++;              // skip "d="
+    num = 0;
+    while(isdigit(*p))
+    {
+      num = (num * 10) + (*p++ - '0');
+    }
+    if(num > 0) default_dur = num;
+    p++;                   // skip comma
+  }
+
+  // get default octave
+  if(*p == 'o')
+  {
+    p++; p++;              // skip "o="
+    num = *p++ - '0';
+    if(num >= 3 && num <=7) default_oct = num;
+    p++;                   // skip comma
+  }
+
+  // get BPM
+  if(*p == 'b')
+  {
+    p++; p++;              // skip "b="
+    num = 0;
+    while(isdigit(*p))
+    {
+      num = (num * 10) + (*p++ - '0');
+    }
+    bpm = num;
+    p++;                   // skip colon
+  }
+
+  // BPM usually expresses the number of quarter notes per minute
+  wholenote = (60 * 1000L / bpm) * 4;  // this is the time for whole note (in milliseconds)
+
+  // now begin note loop
+  while(*p)
+  {
+    // first, get note duration, if available
+    num = 0;
+    while(isdigit(*p))
+    {
+      num = (num * 10) + (*p++ - '0');
+    }
+
+    if (num) duration = wholenote / num;
+    else duration = wholenote / default_dur;  // we will need to check if we are a dotted note after
+
+    // now get the note
+    note = 0;
+
+    switch(*p)
+    {
+      case 'c':
+        note = 1;
+        break;
+      case 'd':
+        note = 3;
+        break;
+      case 'e':
+        note = 5;
+        break;
+      case 'f':
+        note = 6;
+        break;
+      case 'g':
+        note = 8;
+        break;
+      case 'a':
+        note = 10;
+        break;
+      case 'b':
+        note = 12;
+        break;
+      case 'p':
+      default:
+        note = 0;
+    }
+    p++;
+
+    // now, get optional '#' sharp
+    if(*p == '#')
+    {
+      note++;
+      p++;
+    }
+
+    // now, get optional '.' dotted note
+    if(*p == '.')
+    {
+      duration += duration/2;
+      p++;
+    }
+
+    // now, get scale
+    if(isdigit(*p))
+    {
+      scale = *p - '0';
+      p++;
+    }
+    else
+    {
+      scale = default_oct;
+    }
+
+    scale += OCTAVE_OFFSET;
+
+    if(*p == ',')
+      p++;       // skip comma for next note (or we may be at the end)
+
+    // now play the note
+    if(note)
+    {
+      tone(_pin, notes[(scale - 4) * 12 + note], duration);
+    }
+    else
+    {
+      delay(duration/10);
+    }
+  }
+}
+
+#endif
